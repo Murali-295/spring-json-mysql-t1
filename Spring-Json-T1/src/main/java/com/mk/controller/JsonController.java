@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.*;
+import java.nio.file.NoSuchFileException;
 import java.util.*;
 
 import java.sql.*;
@@ -23,7 +24,7 @@ public class JsonController{
 
     // to load the database connection from app.properties file
     @Autowired
-    private Environment env;
+    private Environment environment;
 
     @GetMapping("/get")
     public void getJsonData() throws IOException {
@@ -47,9 +48,9 @@ public class JsonController{
             Writer writer=new FileWriter(file);
 
             // to get jdbc connection
-            String url = env.getProperty("spring.datasource.url");
-            String username = env.getProperty("spring.datasource.username");
-            String password = env.getProperty("spring.datasource.password");
+            String url = environment.getProperty("spring.datasource.url");
+            String username = environment.getProperty("spring.datasource.username");
+            String password = environment.getProperty("spring.datasource.password");
 
             // to establish database connection
             Connection con = DriverManager.getConnection(url, username, password);
@@ -57,17 +58,17 @@ public class JsonController{
 
             // iterating over table object
             for (String s : componentObject.keySet()) {
-            JSONArray jsonArray = componentObject.getJSONArray(s);
+                JSONArray jsonArray = componentObject.getJSONArray(s);
 
-            // changing the name of table since we cannot create table with special characters
-            String tableName=s.replace('|', '_').replace('-', '_');
+                // changing the name of table since we cannot create table with special characters
+                String tableName=s.replace('|', '_').replace('-', '_');
 
-            // appending table name to file
-            writer.append("The following are Exception raised values due to insufficient columns or values: ").append(tableName);
-            writer.append("\n");
+                // appending table name to file
+                writer.append("The following are Exception raised values due to insufficient columns or values: ").append(tableName);
+                writer.append("\n");
 
-            // iterating over array and the values are stored as objects
-            for (int i = 0; i < jsonArray.length(); i++) {
+                // iterating over array and the values are stored as objects
+                for (int i = 0; i < jsonArray.length(); i++) {
 
                     JSONObject object = jsonArray.getJSONObject(i);
                     StringBuffer stringBuffer=new StringBuffer();
@@ -140,22 +141,22 @@ public class JsonController{
                     // query to insert values to table
                     String qry="INSERT INTO "+tableName+" VALUES "+"("+values+")";
 
-                  try {
-                      executedCount++;// to store the number of values that are successfully stored in database
-                      st.execute(qry);
-                      }
-                  catch (Exception e){
-                      for (String k:keyAndValue.keySet()){
+                    try {
+                        executedCount++;// to store the number of values that are successfully stored in database
+                        st.execute(qry);
+                    }
+                    catch (Exception e){
+                        for (String k:keyAndValue.keySet()){
 
-                          // adding the data that is not stored in database due to some exception to an external file
-                          writer.append(k);
-                          writer.append(" : ");
-                          String objectToString=keyAndValue.get(k).toString();
-                          writer.append(objectToString);
-                          writer.append("\n");
-                      }
-                      writer.append("\n");
-                      count++;// to store the number of values that are not successfully stored in database
+                            // adding the data that is not stored in database due to some exception to an external file
+                            writer.append(k);
+                            writer.append(" : ");
+                            String objectToString=keyAndValue.get(k).toString();
+                            writer.append(objectToString);
+                            writer.append("\n");
+                        }
+                        writer.append("\n");
+                        count++;// to store the number of values that are not successfully stored in database
                     }
 
                 }
@@ -175,37 +176,40 @@ public class JsonController{
 
     @GetMapping("/returnData")
     public HashMap<String,HashMap<String,Object>> returnData() throws IOException, SQLException {
-        Resource resource = resourceLoader.getResource("classpath:sample.json");
-        InputStreamReader inputStreamReader = new InputStreamReader(resource.getInputStream());
-        String text = FileCopyUtils.copyToString(inputStreamReader);
-
-        JSONObject jsonObject = new JSONObject(text);
-        JSONObject componentObject = jsonObject.getJSONObject("components");
 
         HashMap<String,HashMap<String,Object>> totalData=new HashMap<>();
         try {
-            String url = env.getProperty("spring.datasource.url");
-            String username = env.getProperty("spring.datasource.username");
-            String password = env.getProperty("spring.datasource.password");
+            String url = environment.getProperty("spring.datasource.url");
+            String username = environment.getProperty("spring.datasource.username");
+            String password = environment.getProperty("spring.datasource.password");
 
             // Establish database connection
             Connection con = DriverManager.getConnection(url, username, password);
             Statement st = con.createStatement();
             DatabaseMetaData databaseMetaData = con.getMetaData();
 
+            // to store the table names that are retrieved from database
+            ArrayList<String> tableNameList=new ArrayList<>();
+
+            // table names are fetched from database
+            ResultSet Set = databaseMetaData.getTables("components", null, "%", null);
+
+            // iterating through result set to store the values of tables in arraylist
+            while (Set.next()) {
+                String tableName = Set.getString("TABLE_NAME");
+                tableNameList.add(tableName);
+            }
+
+            // used to store the table name and table value array as object
             HashMap<String,Object> hashMap=new HashMap<>();
 
             // to store data of rows and columns in form of object
             ArrayList<Object> arrayList=new ArrayList<>();
 
-            for (String s : componentObject.keySet()) {
-
-                JSONArray jsonArray=componentObject.getJSONArray(s);
-                String Name=s.replace('|', '_').replace('-', '_');
-                String tableName = Name.toLowerCase();
-
+            for(String a: tableNameList)
+            {
                 // getting the table data from db
-                ResultSet resultSet = st.executeQuery("SELECT * FROM "+tableName);
+                ResultSet resultSet = st.executeQuery("SELECT * FROM "+a);
 
                 // used metadata to get col count and fetch col names
                 ResultSetMetaData metaData = resultSet.getMetaData();
@@ -219,12 +223,12 @@ public class JsonController{
                         keyValue.put(metaData.getColumnLabel(i),resultSet.getObject(i));
                     }
                     arrayList.add(keyValue);
-                    }
+                }
                 // to store the table name and table data
-                hashMap.put(s,arrayList);
+                hashMap.put(a,arrayList);
 
             }
-            
+
             // returning the table data with db name in json format to user
             totalData.put("components",hashMap);
             return totalData;
@@ -233,6 +237,6 @@ public class JsonController{
         {
             System.out.println("Exception: "+e);
         }
-        return null;
+        throw new NoSuchFileException("NO file found!");
     }
 }
